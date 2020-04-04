@@ -23,6 +23,7 @@ class Game {
 
     field = [];
     size = 10;
+    direction = 0;
 
     getFieldIndex(x, y) {
         return y * this.size + x;
