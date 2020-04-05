@@ -18,6 +18,10 @@ class Game {
     direction_left = 2;
     direction_up = 3;
 
+    mode_edit = 0;
+    mode_new_delete = 1;
+    mode = this.mode_edit;
+
     lastMessage = null;
     finished = false;
 
@@ -65,8 +69,7 @@ class Game {
 
         this.snake.unshift({x: head.x - 1, y: head.y});
         this.snake.unshift({x: head.x, y: head.y});
-        this.direction_right;
-
+        this.direction = this.direction_right;
         this.newCookie();
     }
 
@@ -102,12 +105,33 @@ class Game {
                 newHead.y++;
                 break;
         }
+
+        // snake 2.0 logic
+        if (newHead.x >= this.size) {
+            newHead.x = 0;
+        }
+        if (newHead.x < 0) {
+            newHead.x = this.size - 1;
+        }
+        if (newHead.y >= this.size) {
+            newHead.y = 0;
+        }
+        if (newHead.y < 0) {
+            newHead.y = this.size - 1;
+        }
         this.snake.unshift(newHead);
 
         if (!(newHead.x === this.cookie.x && newHead.y === this.cookie.y)) {
             this.snake.pop();
         } else {
             this.newCookie();
+        }
+
+        // check finished
+        for (let i = 1; i < this.snake.length; i++) {
+            if (newHead.x === this.snake[i].x && newHead.y === this.snake[i].y) {
+                this.finished = true;
+            }
         }
 
         //redraw field
@@ -141,11 +165,6 @@ const app = new App({
     signingSecret: process.env.SLACK_SIGNING_SECRET
 });
 
-app.message('hello', async ({message, say}) => {
-    // say() sends a message to the channel where the event was triggered
-    await say(`Sali <@${message.user}>!`);
-});
-
 const games = [];
 
 app.message('game', async ({message, say}) => {
@@ -155,6 +174,21 @@ app.message('game', async ({message, say}) => {
     await say('started game');
 });
 
+app.message('game2', async ({message, say}) => {
+    const game = new Game();
+    game.initializeField();
+    game.mode = game.mode_new_delete;
+    games[message.channel] = game;
+    await say('started game');
+});
+app.message('quit', async ({message, say}) => {
+    const game = games[message.channel];
+    if (undefined === game) {
+        return;
+    }
+    game.finished = true;
+});
+//<editor-fold desc="Direction commands">
 app.message('left', async ({message, say}) => {
     const game = games[message.channel];
     if (undefined === game) {
@@ -183,31 +217,25 @@ app.message('up', async ({message, say}) => {
     }
     game.direction = game.direction_up;
 });
+//</editor-fold>
 
-app.message('quit', async ({message, say}) => {
-    const game = games[message.channel];
-    if (undefined === game) {
-        return;
-    }
-    game.finished = true;
-});
+
 
 (async () => {
     // Start your app
     await app.start(process.env.PORT || 3000)
         .then(_ => {
-
-            app.client.chat.postMessage({
-                token: process.env.SLACK_BOT_TOKEN,
-                channel: 'C011D2E4SQ6',
-                text: 'hello world :)'
-            })
-                .then(async res => {
-                        setTimeout(async () => {
-
-                        }, 1000)
-                    }
-                ).catch(console.error);
+            // app.client.chat.postMessage({
+            //     token: process.env.SLACK_BOT_TOKEN,
+            //     channel: 'C011D2E4SQ6',
+            //     text: 'Started snake game :)'
+            // })
+            //     .then(async res => {
+            //             setTimeout(async () => {
+            //
+            //             }, 1000)
+            //         }
+            //     ).catch(console.error);
         });
 })();
 
@@ -219,22 +247,46 @@ app.message('quit', async ({message, say}) => {
             const game = games[channelToken];
             if (game.finished) {
                 delete games[channelToken];
+                app.client.chat.postMessage({
+                    token: process.env.SLACK_BOT_TOKEN,
+                    channel: channelToken,
+                    text: 'game over',
+                });
                 continue;
             }
             game.tick();
-            const response = await app.client.chat.postMessage({
-                token: process.env.SLACK_BOT_TOKEN,
-                channel: channelToken,
-                text: game.printField()
-            });
-            if (null !== game.lastMessage) {
-                await app.client.chat.delete({
+
+            if (game.mode_edit === game.mode) {
+                if (null === game.lastMessage) {
+                    const response = await app.client.chat.postMessage({
+                        token: process.env.SLACK_BOT_TOKEN,
+                        channel: channelToken,
+                        text: game.printField()
+                    });
+                    game.lastMessage = response.message.ts;
+                }
+                await app.client.chat.update({
                     token: process.env.SLACK_BOT_TOKEN,
                     channel: channelToken,
-                    ts: game.lastMessage
+                    ts: game.lastMessage,
+                    text: game.printField()
                 });
             }
-            game.lastMessage = response.message.ts;
+            if (game.mode_new_delete === game.mode) {
+                const response = await app.client.chat.postMessage({
+                    token: process.env.SLACK_BOT_TOKEN,
+                    channel: channelToken,
+                    text: game.printField()
+                });
+                if (null !== game.lastMessage) {
+                    await app.client.chat.delete({
+                        token: process.env.SLACK_BOT_TOKEN,
+                        channel: channelToken,
+                        ts: game.lastMessage
+                    });
+                }
+                game.lastMessage = response.message.ts;
+            }
 
         }
     }
